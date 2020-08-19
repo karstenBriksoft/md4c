@@ -104,7 +104,7 @@ struct MD_CTX_tag {
     /* Immutable stuff (parameters of md_parse()). */
     const CHAR* text;
     SZ size;
-    MD_PARSER parser;
+    MD_PARSER_EX parser;
     void* userdata;
 
     /* When this is true, it allows some optimizations. */
@@ -113,6 +113,9 @@ struct MD_CTX_tag {
     /* Helper temporary growing buffer. */
     CHAR* buffer;
     unsigned alloc_buffer;
+	
+	/* byteoffset used to tell callbacks where we are */
+	MD_OFFSET off;
 
     /* Reference definitions. */
     MD_REF_DEF* ref_defs;
@@ -236,8 +239,8 @@ struct MD_VERBATIMLINE_tag {
 
 #define MD_LOG(msg)                                                     \
     do {                                                                \
-        if(ctx->parser.debug_log != NULL)                               \
-            ctx->parser.debug_log((msg), ctx->userdata);                \
+        if(ctx->parser.debug_log_ex != NULL)                               \
+            ctx->parser.debug_log_ex((msg), ctx->userdata, ctx->off);                \
     } while(0)
 
 #ifdef DEBUG
@@ -352,7 +355,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
             off++;
 
         if(off > 0) {
-            ret = ctx->parser.text(type, str, off, ctx->userdata);
+            ret = ctx->parser.text_ex(type, str, off, ctx->userdata, ctx->off);
             if(ret != 0)
                 return ret;
 
@@ -364,7 +367,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
         if(off >= size)
             return 0;
 
-        ret = ctx->parser.text(MD_TEXT_NULLCHAR, _T(""), 1, ctx->userdata);
+        ret = ctx->parser.text_ex(MD_TEXT_NULLCHAR, _T(""), 1, ctx->userdata, ctx->off);
         if(ret != 0)
             return ret;
         off++;
@@ -401,7 +404,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 
 #define MD_ENTER_BLOCK(type, arg)                                           \
     do {                                                                    \
-        ret = ctx->parser.enter_block((type), (arg), ctx->userdata);        \
+        ret = ctx->parser.enter_block_ex((type), (arg), ctx->userdata, ctx->off);        \
         if(ret != 0) {                                                      \
             MD_LOG("Aborted from enter_block() callback.");                 \
             goto abort;                                                     \
@@ -410,7 +413,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 
 #define MD_LEAVE_BLOCK(type, arg)                                           \
     do {                                                                    \
-        ret = ctx->parser.leave_block((type), (arg), ctx->userdata);        \
+        ret = ctx->parser.leave_block_ex((type), (arg), ctx->userdata, ctx->off);        \
         if(ret != 0) {                                                      \
             MD_LOG("Aborted from leave_block() callback.");                 \
             goto abort;                                                     \
@@ -419,7 +422,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 
 #define MD_ENTER_SPAN(type, arg)                                            \
     do {                                                                    \
-        ret = ctx->parser.enter_span((type), (arg), ctx->userdata);         \
+        ret = ctx->parser.enter_span_ex((type), (arg), ctx->userdata, ctx->off);         \
         if(ret != 0) {                                                      \
             MD_LOG("Aborted from enter_span() callback.");                  \
             goto abort;                                                     \
@@ -428,7 +431,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 
 #define MD_LEAVE_SPAN(type, arg)                                            \
     do {                                                                    \
-        ret = ctx->parser.leave_span((type), (arg), ctx->userdata);         \
+        ret = ctx->parser.leave_span_ex((type), (arg), ctx->userdata, ctx->off);         \
         if(ret != 0) {                                                      \
             MD_LOG("Aborted from leave_span() callback.");                  \
             goto abort;                                                     \
@@ -438,7 +441,7 @@ md_text_with_null_replacement(MD_CTX* ctx, MD_TEXTTYPE type, const CHAR* str, SZ
 #define MD_TEXT(type, str, size)                                            \
     do {                                                                    \
         if(size > 0) {                                                      \
-            ret = ctx->parser.text((type), (str), (size), ctx->userdata);   \
+            ret = ctx->parser.text_ex((type), (str), (size), ctx->userdata, ctx->off);   \
             if(ret != 0) {                                                  \
                 MD_LOG("Aborted from text() callback.");                    \
                 goto abort;                                                 \
@@ -5657,7 +5660,7 @@ md_line_indentation(MD_CTX* ctx, unsigned total_indent, OFF beg, OFF* p_end)
 
 static const MD_LINE_ANALYSIS md_dummy_blank_line = { MD_LINE_BLANK, 0 };
 
-/* Analyze type of the line and find some its properties. This serves as a
+/* Analyze type of the line and find some of its properties. This serves as a
  * main input for determining type and boundaries of a block. */
 static int
 md_analyze_line(MD_CTX* ctx, OFF beg, OFF* p_end,
@@ -6255,6 +6258,52 @@ abort:
     return ret;
 }
 
+/********************
+ ***   Private    ***
+ ********************/
+
+// trampoline functions to make the MD_PARSER compatible with MD_PARSER_EX API
+
+typedef struct _USERDATA_WRAPPER {
+	void* original;
+	const MD_PARSER* parser;
+} USERDATA_WRAPPER;
+
+int _enter_block_ex(MD_BLOCKTYPE type, void* detail, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->enter_block(type, detail, wrapper->original);
+}
+
+int _leave_block_ex(MD_BLOCKTYPE type, void* detail, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->leave_block(type, detail, wrapper->original);
+}
+
+int _enter_span_ex(MD_SPANTYPE type, void* detail, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->enter_span(type, detail, wrapper->original);
+}
+
+int _leave_span_ex(MD_SPANTYPE type, void* detail, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->leave_span(type, detail, wrapper->original);
+}
+
+int _text_ex(MD_TEXTTYPE type, const MD_CHAR* text, MD_SIZE size, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->text(type, text, size, wrapper->original);	
+}
+
+void _debug_log_ex(const char* msg, void* userdata, MD_OFFSET offset)
+{
+	USERDATA_WRAPPER* wrapper = (USERDATA_WRAPPER*)userdata;
+	return wrapper->parser->debug_log(msg, wrapper->original);		
+}
 
 /********************
  ***  Public API  ***
@@ -6263,13 +6312,34 @@ abort:
 int
 md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userdata)
 {
+	// below are _ex functions that will call non_ex functions. 
+	// To know which functions to call, the userdata of this function and the MD_PARSER need to be combined, transported and unpacked
+	
+	USERDATA_WRAPPER userDataWrapper = {};
+	userDataWrapper.original = userdata;
+	userDataWrapper.parser = parser;
+	
+	MD_PARSER_EX parserEx = {};
+	parserEx.enter_block_ex = _enter_block_ex;
+	parserEx.leave_block_ex = _leave_block_ex;
+	parserEx.enter_span_ex = _enter_span_ex;
+	parserEx.leave_span_ex = _leave_span_ex;
+	parserEx.text_ex = _text_ex;
+	parserEx.debug_log_ex = _debug_log_ex;
+	
+	return md_parse_ex(text, size, &parserEx, &userDataWrapper);
+}
+
+int
+md_parse_ex(const MD_CHAR* text, MD_SIZE size, const MD_PARSER_EX* parser, void* userdata)
+{
     MD_CTX ctx;
     int i;
     int ret;
 
     if(parser->abi_version != 0) {
-        if(parser->debug_log != NULL)
-            parser->debug_log("Unsupported abi_version.", userdata);
+        if(parser->debug_log_ex != NULL)
+            parser->debug_log_ex("Unsupported abi_version.", userdata, 0);
         return -1;
     }
 
@@ -6277,7 +6347,7 @@ md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userd
     memset(&ctx, 0, sizeof(MD_CTX));
     ctx.text = text;
     ctx.size = size;
-    memcpy(&ctx.parser, parser, sizeof(MD_PARSER));
+    memcpy(&ctx.parser, parser, sizeof(MD_PARSER_EX));
     ctx.userdata = userdata;
     ctx.code_indent_offset = (ctx.parser.flags & MD_FLAG_NOINDENTEDCODEBLOCKS) ? (OFF)(-1) : 4;
     md_build_mark_char_map(&ctx);

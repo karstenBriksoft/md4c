@@ -372,6 +372,53 @@ typedef struct MD_PARSER {
     void (*syntax)(void);
 } MD_PARSER;
 
+/* Parser structure.
+ */
+typedef struct MD_PARSER_EX {
+    /* Reserved. Set to zero.
+     */
+    unsigned abi_version;
+
+    /* Dialect options. Bitmask of MD_FLAG_xxxx values.
+     */
+    unsigned flags;
+
+    /* Caller-provided rendering callbacks.
+     *
+     * For some block/span types, more detailed information is provided in a
+     * type-specific structure pointed by the argument 'detail'.
+     *
+     * The last argument of all callbacks, 'userdata', is just propagated from
+     * md_parse() and is available for any use by the application.
+     *
+     * Note any strings provided to the callbacks as their arguments or as
+     * members of any detail structure are generally not zero-terminated.
+     * Application has to take the respective size information into account.
+     *
+     * Any rendering callback may abort further parsing of the document by
+     * returning non-zero.
+	 * 
+	 * Each callback has an offset parameter where the current file position is noted. 
+	 * This offset can be used to determine where in the source document the parser currently is
+     */
+    int (*enter_block_ex)(MD_BLOCKTYPE /*type*/, void* /*detail*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+    int (*leave_block_ex)(MD_BLOCKTYPE /*type*/, void* /*detail*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+
+    int (*enter_span_ex)(MD_SPANTYPE /*type*/, void* /*detail*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+    int (*leave_span_ex)(MD_SPANTYPE /*type*/, void* /*detail*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+
+    int (*text_ex)(MD_TEXTTYPE /*type*/, const MD_CHAR* /*text*/, MD_SIZE /*size*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+
+    /* Debug callback. Optional (may be NULL).
+     *
+     * If provided and something goes wrong, this function gets called.
+     * This is intended for debugging and problem diagnosis for developers;
+     * it is not intended to provide any errors suitable for displaying to an
+     * end user.
+     */
+    void (*debug_log_ex)(const char* /*msg*/, void* /*userdata*/, MD_OFFSET /*offset*/);
+} MD_PARSER_EX;
+
 
 /* For backward compatibility. Do not use in new code.
  */
@@ -388,6 +435,7 @@ typedef MD_PARSER MD_RENDERER;
  * returning non-zero, the return value of the callback is returned.
  */
 int md_parse(const MD_CHAR* text, MD_SIZE size, const MD_PARSER* parser, void* userdata);
+int md_parse_ex(const MD_CHAR* text, MD_SIZE size, const MD_PARSER_EX* parser, void* userdata);
 
 
 #ifdef __cplusplus
