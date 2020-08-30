@@ -267,6 +267,22 @@ validate the whole document before passing it to the MD4C parser.
 
 MD4C is covered with MIT license, see the file `LICENSE.md`.
 
+## Building
+
+Building MD4C from the source repository or source package is based on `cmake` and there should be no surprises.
+There are no build dependencies (standard C library suffices).
+
+For example, on Linux:
+
+```
+$ cd md4c
+$ mkdir build
+$ cd build
+$ cmake ..
+$ make
+```
+
+This actually builds the `md4c` library and `md2html` utility. This utility uses MD4C parser to read a Markdown document and converts it into HTML.
 
 ## Links to Related Projects
 

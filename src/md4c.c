@@ -213,9 +213,9 @@ struct MD_CTX_tag {
 
 enum MD_LINETYPE_tag {
     MD_LINE_BLANK,
-    MD_LINE_HR,
-    MD_LINE_ATXHEADER,
-    MD_LINE_SETEXTHEADER,
+	MD_LINE_HR,                /* HR is created for *** or --- or similar */
+	MD_LINE_ATXHEADER,         /* ATX Header is # before a header */
+    MD_LINE_SETEXTHEADER,      /* SETEXT Header is --- or === underneath a header */
     MD_LINE_SETEXTUNDERLINE,
     MD_LINE_INDENTEDCODE,
     MD_LINE_FENCEDCODE,
